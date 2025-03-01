@@ -4,48 +4,45 @@ const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs'); // Tambahkan ini
+const { createClient: createStorageClient } = require('@supabase/storage-js'); // Tambahkan ini
 
 const app = express();
 const port = process.env.PORT || 5000;
 
 // Supabase Client
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+const supabaseUrl = process.env.SUPABASE_URL; // Tambahkan ini
+const supabaseKey = process.env.SUPABASE_KEY; // Tambahkan ini
+const supabase = createClient(supabaseUrl, supabaseKey);
+const storageClient = createStorageClient(supabaseUrl, {
+    apikey: supabaseKey,
+    global: { headers: { Authorization: `Bearer ${supabaseKey}` } },
+}); // Tambahkan ini
 
 // Middleware
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 // Multer Configuration
-const uploadsDir = path.join(__dirname, 'uploads'); // Path relatif
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir);
+const upload = multer({ storage: multer.memoryStorage() }); // Ubah ini
+
+// Fungsi untuk mengunggah file ke Supabase Storage
+async function uploadFileToSupabase(file, filePath) {
+    const { error } = await storageClient
+        .from('mybucket') // Nama bucket Anda
+        .upload(filePath, file.buffer, { contentType: file.mimetype });
+
+    if (error) {
+        console.error('Supabase Storage Error:', error);
+        return null;
+    }
+
+    return `<span class="math-inline">\{supabaseUrl\}/storage/v1/object/public/mybucket/</span>{filePath}`; // URL file yang diunggah
 }
-
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadsDir); // Store uploaded files in 'uploads' folder
-    },
-    filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname)); // Rename file with timestamp
-    }
-});
-
-const fileFilter = (req, file, cb) => {
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg']; // Contoh tipe file yang diizinkan
-    if (allowedTypes.includes(file.mimetype)) {
-        cb(null, true);
-    } else {
-        cb(new Error('Invalid file type'), false);
-    }
-};
-
-const upload = multer({ storage: storage, fileFilter: fileFilter });
 
 // --------------------- PROJECTS CRUD ---------------------
 
 // Create a project (with image upload)
-app.post('/projects', upload.single('project_image'), async (req, res, next) => { // tambahkan next
+app.post('/projects', upload.single('project_image'), async (req, res, next) => {
     try {
         console.log("Request body:", req.body);
         console.log("Uploaded file:", req.file);
@@ -54,7 +51,14 @@ app.post('/projects', upload.single('project_image'), async (req, res, next) => 
             return res.status(400).json({ error: "No file uploaded" });
         }
 
-        const project_image = req.file.path;
+        let project_image = null; // Ubah ini
+        if (req.file) {
+            const imageUrl = await uploadFileToSupabase(req.file, `projects/<span class="math-inline">\{Date\.now\(\)\}</span>{path.extname(req.file.originalname)}`);
+            if (!imageUrl) {
+                return res.status(500).json({ error: 'Failed to upload image to Supabase Storage' });
+            }
+            project_image = imageUrl;
+        }
 
         const { data, error } = await supabase
             .from('projects')
@@ -69,9 +73,9 @@ app.post('/projects', upload.single('project_image'), async (req, res, next) => 
         res.json(data);
     } catch (error) {
         console.error("General Error:", error);
-        res.status(500).json({ error: error.message }); // Pastikan respons error JSON
+        res.status(500).json({ error: error.message });
     }
-}, (error, req, res, next) => { // Penanganan Error Multer
+}, (error, req, res, next) => {
     if (error instanceof multer.MulterError) {
         res.status(400).json({ error: error.message });
     } else if (error) {
@@ -116,7 +120,11 @@ app.put('/projects/:id', upload.single('project_image'), async (req, res) => {
     let updateData = { project_name, project_description, project_details, project_date };
 
     if (req.file) {
-        updateData.project_image = req.file.path; // Update image if a new one is uploaded
+        const imageUrl = await uploadFileToSupabase(req.file, `projects/<span class="math-inline">\{Date\.now\(\)\}</span>{path.extname(req.file.originalname)}`);
+        if (!imageUrl) {
+            return res.status(500).json({ error: 'Failed to upload image to Supabase Storage' });
+        }
+        updateData.project_image = imageUrl;
     }
 
     const { data, error } = await supabase
@@ -132,6 +140,7 @@ app.put('/projects/:id', upload.single('project_image'), async (req, res) => {
 
     res.json(data);
 });
+
 
 // Delete a project
 app.delete('/projects/:id', async (req, res) => {
@@ -149,14 +158,21 @@ app.delete('/projects/:id', async (req, res) => {
 // --------------------- PEOPLE CRUD ---------------------
 
 // Create a person (with image upload)
-app.post('/people', upload.single('people_image'), async (req, res, next) => { // tambahkan next
+app.post('/people', upload.single('people_image'), async (req, res, next) => {
     const { people_name, people_role, people_bio, people_contact } = req.body;
 
     if (!people_name || !req.file || !people_role || !people_bio || !people_contact) {
         return res.status(400).json({ error: 'All fields are required, including image upload' });
     }
 
-    const people_image = req.file.path;
+    let people_image = null;
+    if (req.file) {
+        const imageUrl = await uploadFileToSupabase(req.file, `people/<span class="math-inline">\{Date\.now\(\)\}</span>{path.extname(req.file.originalname)}`);
+        if (!imageUrl) {
+            return res.status(500).json({ error: 'Failed to upload image to Supabase Storage' });
+        }
+        people_image = imageUrl;
+    }
 
     const { data, error } = await supabase
         .from('people')
@@ -169,13 +185,14 @@ app.post('/people', upload.single('people_image'), async (req, res, next) => { /
     }
 
     res.json(data);
-}, (error, req, res, next) => { // Penanganan Error Multer
+}, (error, req, res, next) => {
     if (error instanceof multer.MulterError) {
         res.status(400).json({ error: error.message });
     } else if (error) {
         res.status(500).json({ error: error.message });
     }
 });
+
 
 // Get all people
 app.get('/people', async (req, res) => {
@@ -203,7 +220,7 @@ app.get('/people/:id', async (req, res) => {
 });
 
 // Update a person (with image upload)
-app.put('/people/:id', upload.single('people_image'), async (req, res, next) => { // tambahkan next
+app.put('/people/:id', upload.single('people_image'), async (req, res, next) => {
     const { id } = req.params;
     const { people_name, people_role, people_bio, people_contact } = req.body;
 
@@ -214,7 +231,11 @@ app.put('/people/:id', upload.single('people_image'), async (req, res, next) => 
     let updateData = { people_name, people_role, people_bio, people_contact };
 
     if (req.file) {
-        updateData.people_image = req.file.path;
+        const imageUrl = await uploadFileToSupabase(req.file, `people/<span class="math-inline">\{Date\.now\(\)\}</span>{path.extname(req.file.originalname)}`);
+        if (!imageUrl) {
+            return res.status(500).json({ error: 'Failed to upload image to Supabase Storage' });
+        }
+        updateData.people_image = imageUrl;
     }
 
     const { data, error } = await supabase
@@ -229,13 +250,14 @@ app.put('/people/:id', upload.single('people_image'), async (req, res, next) => 
     }
 
     res.json(data);
-}, (error, req, res, next) => { // Penanganan Error Multer
+}, (error, req, res, next) => {
     if (error instanceof multer.MulterError) {
         res.status(400).json({ error: error.message });
     } else if (error) {
         res.status(500).json({ error: error.message });
     }
 });
+
 
 // Delete a person
 app.delete('/people/:id', async (req, res) => {
