@@ -4,6 +4,7 @@ const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const multer = require('multer');
 const path = require('path');
+const { body, validationResult } = require('express-validator'); // Tambahkan express-validator
 
 const { createClient: createStorageClient } = require('@supabase/storage-js');
 
@@ -20,7 +21,16 @@ const storageClient = createStorageClient(supabaseUrl, {
 });
 
 // Middleware
-app.use(cors({ origin: '*' }));
+const allowedOrigins = ['http://your-frontend-domain.com']; // Ganti dengan domain Anda
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    }
+}));
 app.use(express.json());
 
 // Multer Configuration
@@ -28,10 +38,6 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 // Fungsi untuk mengunggah file ke Supabase Storage
 async function uploadFileToSupabase(file, filePath) {
-    if (!supabaseUrl || !filePath) {
-        console.error('supabaseUrl or filePath is undefined');
-        return null;
-    }
     try {
         const { error } = await storageClient
             .from('mybucket')
@@ -42,18 +48,27 @@ async function uploadFileToSupabase(file, filePath) {
             return null;
         }
 
-        return `<span class="math-inline">\{supabaseUrl\}/storage/v1/object/public/mybucket/</span>{filePath}`;
+        return `${supabaseUrl}/storage/v1/object/public/mybucket/${filePath}`; // Kembalikan URL saja
     } catch (error) {
-        console.error("error ketika upload ke supabase storage", error);
+        console.error("Error uploading to Supabase Storage:", error);
         return null;
     }
-
 }
 
 // --------------------- PROJECTS CRUD ---------------------
 
 // Create a project (with image upload)
-app.post('/projects', upload.single('project_image'), async (req, res, next) => {
+app.post('/projects', [
+    body('project_name').notEmpty().trim(),
+    body('project_description').notEmpty().trim(),
+    body('project_details').notEmpty().trim(),
+    body('project_date').notEmpty().trim(),
+], upload.single('project_image'), async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
     try {
         console.log("Request body:", req.body);
         console.log("Uploaded file:", req.file);
@@ -64,7 +79,8 @@ app.post('/projects', upload.single('project_image'), async (req, res, next) => 
 
         let project_image = null;
         if (req.file) {
-            const imageUrl = await uploadFileToSupabase(req.file, `projects/<span class="math-inline">\{Date\.now\(\)\}</span>{path.extname(req.file.originalname)}`);
+            const filePath = `projects/${Date.now()}${path.extname(req.file.originalname)}`;
+            const imageUrl = await uploadFileToSupabase(req.file, filePath);
             if (!imageUrl) {
                 return res.status(500).json({ error: 'Failed to upload image to Supabase Storage' });
             }
@@ -81,7 +97,7 @@ app.post('/projects', upload.single('project_image'), async (req, res, next) => 
             return res.status(400).json({ error: error.message });
         }
 
-        res.json(data);
+        res.status(201).json(data); // 201 Created
     } catch (error) {
         console.error("General Error:", error);
         res.status(500).json({ error: error.message });
