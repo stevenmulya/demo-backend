@@ -4,6 +4,7 @@ const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs'); // Tambahkan ini
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -16,21 +17,35 @@ app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 // Multer Configuration
+const uploadsDir = path.join(__dirname, 'uploads'); // Path relatif
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir);
+}
+
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, '/uploads'); // Store uploaded files in 'uploads' folder
+        cb(null, uploadsDir); // Store uploaded files in 'uploads' folder
     },
     filename: (req, file, cb) => {
         cb(null, Date.now() + path.extname(file.originalname)); // Rename file with timestamp
     }
 });
 
-const upload = multer({ storage: storage });
+const fileFilter = (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg']; // Contoh tipe file yang diizinkan
+    if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+    } else {
+        cb(new Error('Invalid file type'), false);
+    }
+};
+
+const upload = multer({ storage: storage, fileFilter: fileFilter });
 
 // --------------------- PROJECTS CRUD ---------------------
 
 // Create a project (with image upload)
-app.post('/projects', upload.single('project_image'), async (req, res) => {
+app.post('/projects', upload.single('project_image'), async (req, res, next) => { // tambahkan next
     try {
         console.log("Request body:", req.body);
         console.log("Uploaded file:", req.file);
@@ -55,6 +70,12 @@ app.post('/projects', upload.single('project_image'), async (req, res) => {
     } catch (error) {
         console.error("General Error:", error);
         res.status(500).json({ error: error.message }); // Pastikan respons error JSON
+    }
+}, (error, req, res, next) => { // Penanganan Error Multer
+    if (error instanceof multer.MulterError) {
+        res.status(400).json({ error: error.message });
+    } else if (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -128,7 +149,7 @@ app.delete('/projects/:id', async (req, res) => {
 // --------------------- PEOPLE CRUD ---------------------
 
 // Create a person (with image upload)
-app.post('/people', upload.single('people_image'), async (req, res) => {
+app.post('/people', upload.single('people_image'), async (req, res, next) => { // tambahkan next
     const { people_name, people_role, people_bio, people_contact } = req.body;
 
     if (!people_name || !req.file || !people_role || !people_bio || !people_contact) {
@@ -148,6 +169,12 @@ app.post('/people', upload.single('people_image'), async (req, res) => {
     }
 
     res.json(data);
+}, (error, req, res, next) => { // Penanganan Error Multer
+    if (error instanceof multer.MulterError) {
+        res.status(400).json({ error: error.message });
+    } else if (error) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 // Get all people
@@ -176,7 +203,7 @@ app.get('/people/:id', async (req, res) => {
 });
 
 // Update a person (with image upload)
-app.put('/people/:id', upload.single('people_image'), async (req, res) => {
+app.put('/people/:id', upload.single('people_image'), async (req, res, next) => { // tambahkan next
     const { id } = req.params;
     const { people_name, people_role, people_bio, people_contact } = req.body;
 
@@ -202,6 +229,12 @@ app.put('/people/:id', upload.single('people_image'), async (req, res) => {
     }
 
     res.json(data);
+}, (error, req, res, next) => { // Penanganan Error Multer
+    if (error instanceof multer.MulterError) {
+        res.status(400).json({ error: error.message });
+    } else if (error) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 // Delete a person
@@ -237,7 +270,6 @@ app.post('/assign', async (req, res) => {
     res.json({ message: 'Person assigned to project successfully', data });
 });
 
-
 // Get people assigned to a specific project
 app.get('/projects/:id/people', async (req, res) => {
     const { id } = req.params;
@@ -245,7 +277,7 @@ app.get('/projects/:id/people', async (req, res) => {
         .from('project_people')
         .select('people_id, people:people_id (people_name, people_image, people_role)')
         .eq('project_id', id);
-    
+
     if (error) return res.status(400).json({ error: error.message });
 
     res.json(data);
@@ -258,7 +290,7 @@ app.get('/people/:id/projects', async (req, res) => {
         .from('project_people')
         .select('project_id, project:project_id (project_name, project_image)')
         .eq('people_id', id);
-    
+
     if (error) return res.status(400).json({ error: error.message });
 
     res.json(data);
