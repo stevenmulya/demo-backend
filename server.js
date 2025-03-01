@@ -5,8 +5,7 @@ const { createClient } = require('@supabase/supabase-js');
 const multer = require('multer');
 const path = require('path');
 const { body, validationResult } = require('express-validator'); // Tambahkan express-validator
-
-const { createClient: createStorageClient } = require('@supabase/storage-js');
+const storage = supabase.storage; // Inisialisasi storage
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -39,9 +38,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 // Fungsi untuk mengunggah file ke Supabase Storage
 async function uploadFileToSupabase(file, filePath) {
     try {
-        const { error } = await storageClient
-            .from('mybucket')
-            .upload(filePath, file.buffer, { contentType: file.mimetype });
+        const { error } = await storage.from('mybucket').upload(filePath, file.buffer, { contentType: file.mimetype });
 
         if (error) {
             console.error('Supabase Storage Error:', error);
