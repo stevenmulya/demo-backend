@@ -4,39 +4,49 @@ const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const multer = require('multer');
 const path = require('path');
-const { createClient: createStorageClient } = require('@supabase/storage-js'); // Tambahkan ini
+const { createClient: createStorageClient } = require('@supabase/storage-js');
 
 const app = express();
 const port = process.env.PORT || 5000;
 
 // Supabase Client
-const supabaseUrl = process.env.SUPABASE_URL; // Tambahkan ini
-const supabaseKey = process.env.SUPABASE_KEY; // Tambahkan ini
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 const storageClient = createStorageClient(supabaseUrl, {
     apikey: supabaseKey,
     global: { headers: { Authorization: `Bearer ${supabaseKey}` } },
-}); // Tambahkan ini
+});
 
 // Middleware
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 // Multer Configuration
-const upload = multer({ storage: multer.memoryStorage() }); // Ubah ini
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Fungsi untuk mengunggah file ke Supabase Storage
 async function uploadFileToSupabase(file, filePath) {
-    const { error } = await storageClient
-        .from('mybucket') // Nama bucket Anda
-        .upload(filePath, file.buffer, { contentType: file.mimetype });
+    if (!supabaseUrl || !filePath) {
+        console.error('supabaseUrl or filePath is undefined');
+        return null;
+    }
+    try {
+        const { error } = await storageClient
+            .from('mybucket')
+            .upload(filePath, file.buffer, { contentType: file.mimetype });
 
-    if (error) {
-        console.error('Supabase Storage Error:', error);
+        if (error) {
+            console.error('Supabase Storage Error:', error);
+            return null;
+        }
+
+        return `<span class="math-inline">\{supabaseUrl\}/storage/v1/object/public/mybucket/</span>{filePath}`;
+    } catch (error) {
+        console.error("error ketika upload ke supabase storage", error);
         return null;
     }
 
-    return `<span class="math-inline">\{supabaseUrl\}/storage/v1/object/public/mybucket/</span>{filePath}`; // URL file yang diunggah
 }
 
 // --------------------- PROJECTS CRUD ---------------------
@@ -51,7 +61,7 @@ app.post('/projects', upload.single('project_image'), async (req, res, next) => 
             return res.status(400).json({ error: "No file uploaded" });
         }
 
-        let project_image = null; // Ubah ini
+        let project_image = null;
         if (req.file) {
             const imageUrl = await uploadFileToSupabase(req.file, `projects/<span class="math-inline">\{Date\.now\(\)\}</span>{path.extname(req.file.originalname)}`);
             if (!imageUrl) {
@@ -141,7 +151,6 @@ app.put('/projects/:id', upload.single('project_image'), async (req, res) => {
     res.json(data);
 });
 
-
 // Delete a project
 app.delete('/projects/:id', async (req, res) => {
     const { id } = req.params;
@@ -193,7 +202,6 @@ app.post('/people', upload.single('people_image'), async (req, res, next) => {
     }
 });
 
-
 // Get all people
 app.get('/people', async (req, res) => {
     const { data, error } = await supabase.from('people').select('*');
@@ -231,7 +239,7 @@ app.put('/people/:id', upload.single('people_image'), async (req, res, next) => 
     let updateData = { people_name, people_role, people_bio, people_contact };
 
     if (req.file) {
-        const imageUrl = await uploadFileToSupabase(req.file, `people/<span class="math-inline">\{Date\.now\(\)\}</span>{path.extname(req.file.originalname)}`);
+        const imageUrl = await uploadFileToSupabase(req.file, `people/${Date.now()}${path.extname(req.file.originalname)}`);
         if (!imageUrl) {
             return res.status(500).json({ error: 'Failed to upload image to Supabase Storage' });
         }
@@ -257,7 +265,6 @@ app.put('/people/:id', upload.single('people_image'), async (req, res, next) => 
         res.status(500).json({ error: error.message });
     }
 });
-
 
 // Delete a person
 app.delete('/people/:id', async (req, res) => {
