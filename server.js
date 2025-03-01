@@ -10,11 +10,7 @@ const port = process.env.PORT || 5000;
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 // Middleware
-app.use(cors({
-    origin: ['http://localhost:4322', 'https://your-frontend.vercel.app'],
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-})); // Konfigurasi CORS yang lebih aman
+app.use(cors({ origin: '*' })); // Konfigurasi CORS yang lebih aman
 app.use(express.json());
 
 // --------------------- PROJECTS CRUD ---------------------
