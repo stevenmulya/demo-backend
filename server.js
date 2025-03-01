@@ -31,26 +31,31 @@ const upload = multer({ storage: storage });
 
 // Create a project (with image upload)
 app.post('/projects', upload.single('project_image'), async (req, res) => {
-    const { project_name, project_description, project_details, project_date } = req.body;
+    try {
+        console.log("Request body:", req.body);
+        console.log("Uploaded file:", req.file);
 
-    // Validate input
-    if (!project_name || !req.file || !project_description || !project_details || !project_date) {
-        return res.status(400).json({ error: 'All fields are required, including image upload' });
+        if (!req.file) {
+            return res.status(400).json({ error: "No file uploaded" });
+        }
+
+        const project_image = req.file.path;
+
+        const { data, error } = await supabase
+            .from('projects')
+            .insert([{ project_name: req.body.project_name, project_image, project_description: req.body.project_description, project_details: req.body.project_details, project_date: req.body.project_date }])
+            .select();
+
+        if (error) {
+            console.error("Supabase Error:", error);
+            return res.status(400).json({ error: error.message });
+        }
+
+        res.json(data);
+    } catch (error) {
+        console.error("General Error:", error);
+        res.status(500).json({ error: error.message }); // Pastikan respons error JSON
     }
-
-    const project_image = req.file.path; // Store the file path in the database
-
-    const { data, error } = await supabase
-        .from('projects')
-        .insert([{ project_name, project_image, project_description, project_details, project_date }])
-        .select();
-
-    if (error) {
-        console.error(error);
-        return res.status(400).json({ error: error.message });
-    }
-
-    res.json(data);
 });
 
 // Get all projects
