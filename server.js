@@ -18,7 +18,7 @@ app.use(express.json());
 // Multer Configuration
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, 'uploads/'); // Store uploaded files in 'uploads' folder
+        cb(null, '/uploads'); // Store uploaded files in 'uploads' folder
     },
     filename: (req, file, cb) => {
         cb(null, Date.now() + path.extname(file.originalname)); // Rename file with timestamp
